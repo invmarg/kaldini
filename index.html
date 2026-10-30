@@ -420,7 +420,7 @@ p{margin:0;line-height:1.55;color:var(--muted)}
 /* ====== CONFIGURACIÓN ======
    Pega aquí la URL de tu aplicación web de Google Apps Script (termina en /exec) */
 const CONFIG = {
-  ENDPOINT: 'https://script.google.com/macros/s/AKfycbybITum9wcAvPyNvNz1tr6q9Stfgzt4iqjiSfWzFskmjMJ8mWmhCKh1PjkpKaaFnWRn/exec'
+  ENDPOINT: 'PEGA_AQUI_LA_URL_DE_APPS_SCRIPT'
 };
 </script>
 <script>
@@ -553,6 +553,63 @@ const CONFIG = {
   }
   function showErr(msg) { const e = $('#sendErr'); e.textContent = msg; e.hidden = false; }
   let sending = false;
+  const newRef = () => Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  let ref = newRef();   // misma referencia en todos los reintentos de esta participación
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  function jsonp(url) {
+    return new Promise((ok, ko) => {
+      const name = '__kal' + Math.random().toString(36).slice(2);
+      const sc = document.createElement('script');
+      const done = () => { clearTimeout(t); delete window[name]; sc.remove(); };
+      const t = setTimeout(() => { done(); ko(new Error('timeout')); }, 12000);
+      window[name] = d => { done(); ok(d); };
+      sc.onerror = () => { done(); ko(new Error('jsonp')); };
+      sc.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + name + '&_=' + Date.now();
+      document.head.appendChild(sc);
+    });
+  }
+  async function confirmar(endpoint, r, intentos) {
+    for (let i = 0; i < intentos; i++) {
+      try { const d = await jsonp(endpoint + '?ref=' + encodeURIComponent(r)); if (d && d.ok && d.codigo) return d; } catch (_) {}
+      if (i < intentos - 1) await sleep(2000);
+    }
+    return null;
+  }
+  function postFormulario(endpoint, payload) {
+    let fr = document.getElementById('kalSink');
+    if (!fr) { fr = document.createElement('iframe'); fr.name = fr.id = 'kalSink'; fr.hidden = true; document.body.appendChild(fr); }
+    const f = document.createElement('form');
+    f.method = 'POST'; f.action = endpoint; f.target = 'kalSink'; f.hidden = true;
+    const ta = document.createElement('textarea'); ta.name = 'payload'; ta.value = JSON.stringify(payload);
+    f.appendChild(ta); document.body.appendChild(f); f.submit(); setTimeout(() => f.remove(), 1000);
+  }
+  async function enviar(endpoint, payload) {
+    // 1) Envío directo (Chrome, Android, computadoras)
+    try {
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 30000);
+      const res = await fetch(endpoint, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
+      clearTimeout(t);
+      const txt = await res.text();
+      let data;
+      try { data = JSON.parse(txt); } catch (_) {
+        const er = new Error(/accounts\.google|signin|ServiceLogin/i.test(txt) ? 'Google pide iniciar sesión: la implementación no está en "Cualquier usuario".' : 'Respuesta no válida de Apps Script (HTTP ' + res.status + ').');
+        er.server = true; throw er;
+      }
+      if (!data.ok) { const er = new Error('Apps Script: ' + (data.error || 'error desconocido')); er.server = true; throw er; }
+      return data;
+    } catch (err) {
+      if (err.server) throw err;
+      // 2) iPhone/Safari: puede que sí se guardó pero no dejó leer la respuesta
+      let d = await confirmar(endpoint, payload.ref, 2);
+      if (d) return d;
+      // 3) Envío por formulario (no depende de leer la respuesta) y confirmación
+      postFormulario(endpoint, payload);
+      d = await confirmar(endpoint, payload.ref, 15);
+      if (d) return d;
+      throw new Error('Sin confirmación de Apps Script (' + (err.name === 'AbortError' ? 'tiempo agotado' : err.message) + ').');
+    }
+  }
 
   form.addEventListener('submit', async ev => {
     ev.preventDefault();
@@ -561,7 +618,8 @@ const CONFIG = {
     const okF = validFields(screens[3]);
     if (!photo) { $('#fotoErr').hidden = false; drop.classList.remove('bad'); void drop.offsetWidth; drop.classList.add('bad'); }
     if (!okF || !photo) return;
-    if (!/^https:\/\/script\.google\.com\//.test(CONFIG.ENDPOINT)) { showErr('Falta configurar la conexión con Google Sheets (CONFIG.ENDPOINT).'); return; }
+    const ENDPOINT = String(CONFIG.ENDPOINT || '').trim().replace(/^["'“”]+|["'“”]+$/g, '');
+    if (!/^https:\/\/script\.google(usercontent)?\.com\/.+\/exec/.test(ENDPOINT)) { showErr('Falta configurar la conexión con Google Sheets: pega la URL de Apps Script que termina en /exec en CONFIG.ENDPOINT.'); return; }
 
     const btn = $('#send'); sending = true;
     btn.classList.add('loading'); btn.innerHTML = '<span class="spin"></span> Enviando…';
@@ -581,14 +639,8 @@ const CONFIG = {
         foto,
         website: $('#website').value
       };
-      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 45000);
-      const res = await fetch(CONFIG.ENDPOINT, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
-      clearTimeout(t);
-      const txt = await res.text();
-      let data;
-      try { data = JSON.parse(txt); }
-      catch (_) { throw new Error(/accounts\.google|signin|ServiceLogin/i.test(txt) ? 'Google pide iniciar sesión: la implementación no está en "Cualquier usuario".' : 'Respuesta no válida de Apps Script (HTTP ' + res.status + ').'); }
-      if (!data.ok) throw new Error('Apps Script: ' + (data.error || 'error desconocido'));
+      payload.ref = ref;
+      const data = await enviar(ENDPOINT, payload);
       restore();
       $('#code').textContent = data.codigo;
       $('#rName').textContent = payload.nombre;
@@ -598,7 +650,7 @@ const CONFIG = {
     } catch (e) {
       restore();
       if (e.message === 'big') { showErr('La foto es muy pesada. Toma una nueva foto de la factura e inténtalo otra vez.'); return; }
-      const det = e.name === 'AbortError' ? 'Tiempo de espera agotado.' : (e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No se pudo conectar con Apps Script (' + e.message + ').' : e.message);
+      const det = e.message;
       showErr('No pudimos enviar tu participación. Revisa tu conexión a internet y toca "Enviar y participar" otra vez.');
       const sm = document.createElement('small'); sm.style.cssText = 'display:block;margin-top:6px;font-weight:600;opacity:.8';
       sm.textContent = 'Detalle: ' + det; $('#sendErr').appendChild(sm);
@@ -606,7 +658,7 @@ const CONFIG = {
   });
   $('#again').addEventListener('click', () => {
     form.reset(); rating = 0; paint(0); $('#rateLabel').textContent = 'Toca una estrella';
-    $('#rmfoto').click(); $('#sendErr').hidden = true; $$('.bad').forEach(e => e.classList.remove('bad')); go(0, true);
+    $('#rmfoto').click(); $('#sendErr').hidden = true; ref = newRef(); $$('.bad').forEach(e => e.classList.remove('bad')); go(0, true);
   });
 
   /* ---------- nieve ---------- */
