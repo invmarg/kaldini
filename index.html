@@ -420,7 +420,7 @@ p{margin:0;line-height:1.55;color:var(--muted)}
 /* ====== CONFIGURACIÓN ======
    Pega aquí la URL de tu aplicación web de Google Apps Script (termina en /exec) */
 const CONFIG = {
-  ENDPOINT: 'https://script.google.com/macros/s/AKfycbybITum9wcAvPyNvNz1tr6q9Stfgzt4iqjiSfWzFskmjMJ8mWmhCKh1PjkpKaaFnWRn/exec'
+  ENDPOINT: 'PEGA_AQUI_LA_URL_DE_APPS_SCRIPT'
 };
 </script>
 <script>
@@ -584,8 +584,11 @@ const CONFIG = {
       const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 45000);
       const res = await fetch(CONFIG.ENDPOINT, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
       clearTimeout(t);
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'server');
+      const txt = await res.text();
+      let data;
+      try { data = JSON.parse(txt); }
+      catch (_) { throw new Error(/accounts\.google|signin|ServiceLogin/i.test(txt) ? 'Google pide iniciar sesión: la implementación no está en "Cualquier usuario".' : 'Respuesta no válida de Apps Script (HTTP ' + res.status + ').'); }
+      if (!data.ok) throw new Error('Apps Script: ' + (data.error || 'error desconocido'));
       restore();
       $('#code').textContent = data.codigo;
       $('#rName').textContent = payload.nombre;
@@ -594,9 +597,11 @@ const CONFIG = {
       go(4); burst();
     } catch (e) {
       restore();
-      showErr(e.message === 'big'
-        ? 'La foto es muy pesada. Toma una nueva foto de la factura e inténtalo otra vez.'
-        : 'No pudimos enviar tu participación. Revisa tu conexión a internet y toca "Enviar y participar" otra vez.');
+      if (e.message === 'big') { showErr('La foto es muy pesada. Toma una nueva foto de la factura e inténtalo otra vez.'); return; }
+      const det = e.name === 'AbortError' ? 'Tiempo de espera agotado.' : (e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'No se pudo conectar con Apps Script (' + e.message + ').' : e.message);
+      showErr('No pudimos enviar tu participación. Revisa tu conexión a internet y toca "Enviar y participar" otra vez.');
+      const sm = document.createElement('small'); sm.style.cssText = 'display:block;margin-top:6px;font-weight:600;opacity:.8';
+      sm.textContent = 'Detalle: ' + det; $('#sendErr').appendChild(sm);
     }
   });
   $('#again').addEventListener('click', () => {
