@@ -413,7 +413,7 @@ p{margin:0;line-height:1.55;color:var(--muted)}
     </form>
   </div>
 
-  <p class="foot">© 2026 Kaldini · Grupo Oxford Venezuela</p>
+  <p class="foot">© 2026 Kaldini · Grupo Oxford Venezuela · v3</p>
 </main>
 
 <script>
@@ -619,7 +619,7 @@ const CONFIG = {
     if (!photo) { $('#fotoErr').hidden = false; drop.classList.remove('bad'); void drop.offsetWidth; drop.classList.add('bad'); }
     if (!okF || !photo) return;
     const ENDPOINT = String(CONFIG.ENDPOINT || '').trim().replace(/^["'“”]+|["'“”]+$/g, '');
-    if (!/^https:\/\/script\.google(usercontent)?\.com\/.+\/exec/.test(ENDPOINT)) { showErr('Falta configurar la conexión con Google Sheets: pega la URL de Apps Script que termina en /exec en CONFIG.ENDPOINT.'); return; }
+    if (!/^https:\/\//.test(ENDPOINT) || /PEGA_AQUI/.test(ENDPOINT)) { showErr('Falta configurar la conexión con Google Sheets: pega la URL de Apps Script que termina en /exec en CONFIG.ENDPOINT. (La app tiene: ' + (ENDPOINT.slice(0, 60) || 'vacío') + ')'); return; }
 
     const btn = $('#send'); sending = true;
     btn.classList.add('loading'); btn.innerHTML = '<span class="spin"></span> Enviando…';
